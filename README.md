@@ -1,4 +1,21 @@
+# Formstack Kafka Connect SQS Fork
+
+We forked this repo to update the AWS SDK to the latest version to be compatible with EKS Pod Identity Association authentication.
+
+## Building and Deploying
+
+Right now the build and deploy process is manual:
+1. Create a new release in this Github and bump the version in `pom.xml`
+2. Build jar with `mvn clean package`
+3. Attach the jar at `target/plugin/kafka-connect-sqs-...` to the release
+4. Publish the release and copy the link to the jar. Place it in the appropriate Strimzi Kafka Connect Cluster build
+
+
+Note: Our Github's maven repository is private so publishing it there will not work! Strimzi Kafka Connect builds only
+support jars hosted at public URL's.
+
 # kafka-connect-sqs
+Below is the README info from original repo:
 
 The SQS connector plugin provides the ability to use AWS SQS queues as both a source (from an SQS
 queue into a Kafka topic) or sink (out of a Kafka topic into an SQS queue).
