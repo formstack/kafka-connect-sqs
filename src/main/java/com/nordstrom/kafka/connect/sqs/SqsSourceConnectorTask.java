@@ -1,12 +1,12 @@
 /*
  * Copyright 2019 Nordstrom, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
  * the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
@@ -21,6 +21,7 @@ import java.util.stream.Collectors ;
 
 import com.amazonaws.services.sqs.model.MessageAttributeValue;
 import com.nordstrom.kafka.connect.utils.StringUtils;
+import org.apache.kafka.clients.producer.RecordMetadata ;
 import org.apache.kafka.connect.data.Schema ;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.header.ConnectHeaders;
@@ -40,7 +41,7 @@ public class SqsSourceConnectorTask extends SourceTask {
 
   /*
    * (non-Javadoc)
-   * 
+   *
    * @see org.apache.kafka.connect.connector.Task#version()
    */
   @Override
@@ -50,7 +51,7 @@ public class SqsSourceConnectorTask extends SourceTask {
 
   /*
    * (non-Javadoc)
-   * 
+   *
    * @see org.apache.kafka.connect.source.SourceTask#start(java.util.Map)
    */
   @Override
@@ -91,7 +92,7 @@ public class SqsSourceConnectorTask extends SourceTask {
 
   /*
    * (non-Javadoc)
-   * 
+   *
    * @see org.apache.kafka.connect.source.SourceTask#poll()
    */
   @Override
@@ -148,21 +149,41 @@ public class SqsSourceConnectorTask extends SourceTask {
   }
 
   /* (non-Javadoc)
-   * @see org.apache.kafka.connect.source.SourceTask#commitRecord(org.apache.kafka.connect.source.SourceRecord)
+   * @see org.apache.kafka.connect.source.SourceTask#commitRecord(org.apache.kafka.connect.source.SourceRecord, org.apache.kafka.clients.producer.RecordMetadata)
    */
   @Override
-  public void commitRecord( SourceRecord record ) throws InterruptedException {
+  public void commitRecord( SourceRecord record, RecordMetadata metadata ) throws InterruptedException {
     Guard.verifyNotNull( record, "record" ) ;
-    final String receipt = record.sourceOffset().get( SqsConnectorConfigKeys.SQS_MESSAGE_RECEIPT_HANDLE.getValue() )
-        .toString() ;
-    log.debug( ".commit-record:url={}, receipt-handle={}", config.getQueueUrl(), receipt ) ;
+
+    final Map<String, ?> sourceOffset = record.sourceOffset() ;
+    if ( sourceOffset == null ) {
+      log.error( ".commit-record:source-offset-is-null, cannot-delete-sqs-message, partition={}, offset={}",
+          metadata != null ? metadata.partition() : "unknown",
+          metadata != null ? metadata.offset() : "unknown" ) ;
+      throw new IllegalStateException( "Source offset is null, cannot delete SQS message" ) ;
+    }
+
+    final Object receiptHandleObj = sourceOffset.get( SqsConnectorConfigKeys.SQS_MESSAGE_RECEIPT_HANDLE.getValue() ) ;
+    if ( receiptHandleObj == null ) {
+      log.error( ".commit-record:missing-receipt-handle-in-source-offset, offset={}, partition={}, offset={}",
+          sourceOffset,
+          metadata != null ? metadata.partition() : "unknown",
+          metadata != null ? metadata.offset() : "unknown" ) ;
+      throw new IllegalStateException( "Missing receipt handle in source offset, cannot delete SQS message" ) ;
+    }
+
+    final String receipt = receiptHandleObj.toString() ;
+    log.debug( ".commit-record:url={}, receipt-handle={}, partition={}, offset={}",
+        config.getQueueUrl(), receipt,
+        metadata != null ? metadata.partition() : "unknown",
+        metadata != null ? metadata.offset() : "unknown" ) ;
     client.delete( config.getQueueUrl(), receipt ) ;
-    super.commitRecord( record ) ;
+    super.commitRecord( record, metadata ) ;
   }
 
   /*
    * (non-Javadoc)
-   * 
+   *
    * @see org.apache.kafka.connect.source.SourceTask#stop()
    */
   @Override
@@ -173,7 +194,7 @@ public class SqsSourceConnectorTask extends SourceTask {
   /**
    * Test that we have both the task configuration and SQS client properly
    * initialized.
-   * 
+   *
    * @return true if task is in a valid state.
    */
   private boolean isValidState() {
